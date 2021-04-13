@@ -4,9 +4,9 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 07. апр. 2021 12:46
+%%% Created : 13. апр. 2021 13:15
 %%%-------------------------------------------------------------------
--module(db_list).
+-module(lc_db_list).
 -author("golubkin").
 
 %% API
@@ -29,30 +29,27 @@ loop(Db) ->
             %%io:format("in the DB ~p ~n", [Db]),
             case (lists:member({Name,Location}, Db)) of
                 true  ->  From ! already_inserted,
-                          loop(Db);
+                    loop(Db);
                 false ->  Db1 =  lists:append(Db, [{Name, Location}]),
-                          From ! ok,
-                          loop(Db1)
+                    From ! ok,
+                    loop(Db1)
             end;
-        {From, find, Name} ->
-            %% bug/feature: returning only the first found location
-            case lists:keyfind(Name, 1, Db) of
-                {_,Location}  -> From ! Location;
-                false ->  From ! no_such_name
+        {From, where_is, Name} ->
+            case [Value || {ListKey, Value} <- Db, ListKey == Name] of
+                [] ->  From ! no_such_name;
+                Locations  -> From ! Locations
             end,
-                loop(Db);
+            loop(Db);
         {From, remove, Name} ->
-              %%bug here removing only the first
-              Db1 = lists:keydelete(Name,1,Db),
-              From ! ok,
-              loop(Db1);
-        {From, find_all, Location} ->
-            Names = [Name || {Name, Loc} <- Db, Loc == Location],
-            case Names == [] of
-                false ->
-                    From ! Names;
-                true ->
-                    From ! none
+            Db1 = [{ListKey, Value} || {ListKey, Value} <- Db, Name /= ListKey],
+            From ! ok,
+            loop(Db1);
+        {From, located_at, Location} ->
+            case [Name || {Name, Loc} <- Db, Loc == Location] of
+                [] ->
+                    From ! none;
+                Names ->
+                    From ! Names
             end,
             loop(Db);
         {From, fetch_all_names} ->
@@ -85,7 +82,7 @@ insert(Name, Location) ->
 
 where_is(Name) ->
     %%io:format("~p from PID ~w ~n", [?FUNCTION_NAME, self()]),
-    list_server ! {self(), find, Name},
+    list_server ! {self(), where_is, Name},
     receive
         no_such_name -> no_such_name;
         Location -> Location
@@ -98,7 +95,7 @@ remove(Name) ->
     end.
 
 located_at(Location) ->
-    list_server ! {self(), find_all, Location},
+    list_server ! {self(), located_at, Location},
     receive
         none -> none;
         Names -> Names
@@ -117,3 +114,4 @@ all_locations() ->
         none -> [];
         Names -> Names
     end.
+
